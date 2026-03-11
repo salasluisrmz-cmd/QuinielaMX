@@ -5,17 +5,41 @@ import { supabase } from "./supabaseClient";
 const TEMPORADA = "Clausura 2026";
 const JORNADA_ACTUAL = 11;
 
+// Escudos: GitHub gomflo/escudos-liga-mx (MIT) — https://github.com/gomflo/escudos-liga-mx
+const ESCUDOS_BASE = "https://raw.githubusercontent.com/gomflo/escudos-liga-mx/main/src";
+const ESCUDOS_MAP = {
+  "Puebla": "puebla.svg",
+  "Necaxa": "necaxa.svg",
+  "FC Juárez": "fc-juarez.svg",
+  "Monterrey": "rayados.svg",
+  "Atlético San Luis": "atletico-san-luis.svg",
+  "Pachuca": "pachuca.svg",
+  "Guadalajara": "chivas.svg",
+  "Santos Laguna": "santos.svg",
+  "León": "leon.svg",
+  "Tijuana": "tijuana.svg",
+  "Toluca": "toluca.svg",
+  "Atlas": "atlas.svg",
+  "Pumas UNAM": "pumas.svg",
+  "Cruz Azul": "cruz-azul.svg",
+  "Tigres UANL": "tigres.svg",
+  "Querétaro": "queretaro.svg",
+  "América": "america.svg",
+  "Mazatlán": "mazatlan-fc.svg",
+};
+const getEscudoUrl = (nombre) => (ESCUDOS_MAP[nombre] ? `${ESCUDOS_BASE}/${ESCUDOS_MAP[nombre]}` : null);
+
 // ─── PARTIDOS JORNADA 11 (fuente: ESPN / TUDN / RÉCORD — 8 Mar 2026) ────────
 const PARTIDOS_J11 = [
-  { id:1, jornada:11, local:{nombre:"Puebla",escudo:"⚽",color:"#1565C0"}, visitante:{nombre:"Necaxa",escudo:"⚽",color:"#D50000"}, fecha:"Vie 13 Mar",hora:"19:00",estadio:"Estadio Cuauhtémoc" },
-  { id:2, jornada:11, local:{nombre:"FC Juárez",escudo:"⚽",color:"#212121"}, visitante:{nombre:"Monterrey",escudo:"⚽",color:"#003DA5"}, fecha:"Vie 13 Mar",hora:"21:00",estadio:"Est. Olímpico Benito Juárez" },
-  { id:3, jornada:11, local:{nombre:"Atlético San Luis",escudo:"⚽",color:"#C62828"}, visitante:{nombre:"Pachuca",escudo:"⚽",color:"#1565C0"}, fecha:"Sáb 14 Mar",hora:"17:00",estadio:"Est. Alfonso Lastras" },
-  { id:4, jornada:11, local:{nombre:"Guadalajara",escudo:"⚽",color:"#CC0000"}, visitante:{nombre:"Santos Laguna",escudo:"⚽",color:"#2E7D32"}, fecha:"Sáb 14 Mar",hora:"17:07",estadio:"Estadio Akron" },
-  { id:5, jornada:11, local:{nombre:"León",escudo:"⚽",color:"#B8860B"}, visitante:{nombre:"Tijuana",escudo:"⚽",color:"#212121"}, fecha:"Sáb 14 Mar",hora:"19:00",estadio:"Estadio León" },
-  { id:6, jornada:11, local:{nombre:"Toluca",escudo:"⚽",color:"#B71C1C"}, visitante:{nombre:"Atlas",escudo:"⚽",color:"#CC4400"}, fecha:"Sáb 14 Mar",hora:"19:00",estadio:"Est. Nemesio Díez" },
-  { id:7, jornada:11, local:{nombre:"Pumas UNAM",escudo:"⚽",color:"#C8A400"}, visitante:{nombre:"Cruz Azul",escudo:"⚽",color:"#1E5EFF"}, fecha:"Sáb 14 Mar",hora:"21:00",estadio:"Est. Olímpico CU" },
-  { id:8, jornada:11, local:{nombre:"Tigres UANL",escudo:"⚽",color:"#FFD000"}, visitante:{nombre:"Querétaro",escudo:"⚽",color:"#1B5E20"}, fecha:"Dom 15 Mar",hora:"17:00",estadio:"Est. Universitario" },
-  { id:9, jornada:11, local:{nombre:"América",escudo:"⚽",color:"#F5A623"}, visitante:{nombre:"Mazatlán",escudo:"⚽",color:"#FF6F00"}, fecha:"Dom 15 Mar",hora:"19:00",estadio:"Estadio Azteca" },
+  { id:1, jornada:11, local:{nombre:"Puebla",color:"#1565C0"}, visitante:{nombre:"Necaxa",color:"#D50000"}, fecha:"Vie 13 Mar",hora:"19:00",estadio:"Estadio Cuauhtémoc" },
+  { id:2, jornada:11, local:{nombre:"FC Juárez",color:"#212121"}, visitante:{nombre:"Monterrey",color:"#003DA5"}, fecha:"Vie 13 Mar",hora:"21:00",estadio:"Est. Olímpico Benito Juárez" },
+  { id:3, jornada:11, local:{nombre:"Atlético San Luis",color:"#C62828"}, visitante:{nombre:"Pachuca",color:"#1565C0"}, fecha:"Sáb 14 Mar",hora:"17:00",estadio:"Est. Alfonso Lastras" },
+  { id:4, jornada:11, local:{nombre:"Guadalajara",color:"#CC0000"}, visitante:{nombre:"Santos Laguna",color:"#2E7D32"}, fecha:"Sáb 14 Mar",hora:"17:07",estadio:"Estadio Akron" },
+  { id:5, jornada:11, local:{nombre:"León",color:"#B8860B"}, visitante:{nombre:"Tijuana",color:"#212121"}, fecha:"Sáb 14 Mar",hora:"19:00",estadio:"Estadio León" },
+  { id:6, jornada:11, local:{nombre:"Toluca",color:"#B71C1C"}, visitante:{nombre:"Atlas",color:"#CC4400"}, fecha:"Sáb 14 Mar",hora:"19:00",estadio:"Est. Nemesio Díez" },
+  { id:7, jornada:11, local:{nombre:"Pumas UNAM",color:"#C8A400"}, visitante:{nombre:"Cruz Azul",color:"#1E5EFF"}, fecha:"Sáb 14 Mar",hora:"21:00",estadio:"Est. Olímpico CU" },
+  { id:8, jornada:11, local:{nombre:"Tigres UANL",color:"#FFD000"}, visitante:{nombre:"Querétaro",color:"#1B5E20"}, fecha:"Dom 15 Mar",hora:"17:00",estadio:"Est. Universitario" },
+  { id:9, jornada:11, local:{nombre:"América",color:"#F5A623"}, visitante:{nombre:"Mazatlán",color:"#FF6F00"}, fecha:"Dom 15 Mar",hora:"19:00",estadio:"Estadio Azteca" },
 ];
 
 // Resultados reales por partido (id: "1"|"X"|"2") para calcular aciertos en la tabla. Ej: { 1: "1", 2: "X", 3: "2", ... }
@@ -69,6 +93,15 @@ const ProgressRing = ({ filled, total }) => {
   );
 };
 
+const TeamEscudo = ({ nombre }) => {
+  const url = getEscudoUrl(nombre);
+  return (
+    <div className="team-escudo">
+      {url ? <img src={url} alt={nombre} className="team-escudo-img" /> : <span>⚽</span>}
+    </div>
+  );
+};
+
 const PartidoCard = ({ partido, pick, onPick, index }) => (
   <div className={`partido-card ${pick ? "filled" : ""}`} style={{ animationDelay: `${index * 60}ms` }}>
     <div className="partido-meta">
@@ -76,9 +109,9 @@ const PartidoCard = ({ partido, pick, onPick, index }) => (
       <div className="partido-info"><span>📅 {partido.fecha}</span><span>⏰ {partido.hora}</span><span>📍 {partido.estadio}</span></div>
     </div>
     <div className="match-row">
-      <div className="team"><div className="team-escudo">{partido.local.escudo}</div><div><div className="team-name">{partido.local.nombre}</div><div className="team-record">Local</div></div></div>
+      <div className="team"><TeamEscudo nombre={partido.local.nombre} /><div><div className="team-name">{partido.local.nombre}</div><div className="team-record">Local</div></div></div>
       <div className="vs-block"><span className="vs-text">VS</span><span className="match-time">{partido.hora}</span></div>
-      <div className="team visitante"><div className="team-escudo">{partido.visitante.escudo}</div><div><div className="team-name">{partido.visitante.nombre}</div><div className="team-record">Visitante</div></div></div>
+      <div className="team visitante"><TeamEscudo nombre={partido.visitante.nombre} /><div><div className="team-name">{partido.visitante.nombre}</div><div className="team-record">Visitante</div></div></div>
     </div>
     <div className="picks-row">
       {["1","X","2"].map((opt) => (
@@ -465,7 +498,8 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .partido-info{display:flex;gap:12px;font-size:0.72rem;color:var(--muted)}
 .match-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:16px;margin-bottom:16px}
 .team{display:flex;align-items:center;gap:10px}.team.visitante{flex-direction:row-reverse;text-align:right}
-.team-escudo{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;background:rgba(255,255,255,0.05);border:1px solid var(--border);flex-shrink:0}
+.team-escudo{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.5rem;background:rgba(255,255,255,0.05);border:1px solid var(--border);flex-shrink:0;overflow:hidden}
+.team-escudo-img{width:100%;height:100%;object-fit:contain;padding:4px}
 .team-name{font-family:'Oswald',sans-serif;font-size:1.05rem;font-weight:600;letter-spacing:1px}.team-record{font-size:0.65rem;color:var(--muted);margin-top:2px}
 .vs-block{text-align:center}.vs-text{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;color:var(--muted);letter-spacing:2px;display:block}.match-time{font-family:'Oswald',sans-serif;font-size:0.9rem;color:var(--gold);font-weight:600}
 .picks-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
