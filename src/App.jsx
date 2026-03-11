@@ -18,6 +18,9 @@ const PARTIDOS_J11 = [
   { id:9, jornada:11, local:{nombre:"América",escudo:"⚽",color:"#F5A623"}, visitante:{nombre:"Mazatlán",escudo:"⚽",color:"#FF6F00"}, fecha:"Dom 15 Mar",hora:"19:00",estadio:"Estadio Azteca" },
 ];
 
+// Resultados reales por partido (id: "1"|"X"|"2") para calcular aciertos en la tabla. Ej: { 1: "1", 2: "X", 3: "2", ... }
+const RESULTADOS_J11 = {};
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const formatCountdown = (ms) => {
   if (ms <= 0) return "00:00:00";
@@ -38,6 +41,15 @@ const getResultColor = (r) => {
   if (r === "X") return "result-x";
   if (r === "2") return "result-2";
   return "";
+};
+const pickToLabelGrid = (r) => (r === "1" ? "L" : r === "X" ? "E" : r === "2" ? "V" : "-");
+const countAciertos = (picks, resultados) => {
+  if (!resultados || !picks || !Object.keys(resultados).length) return null;
+  return Object.keys(resultados).filter((id) => picks[id] === resultados[id]).length;
+};
+const getGridPickClass = (pick, partidoId, resultados) => {
+  if (!resultados || !resultados[partidoId] || pick === "-" || pick === "") return "";
+  return pick === resultados[partidoId] ? "result-acierto" : "";
 };
 
 // ─── SMALL COMPONENTS ────────────────────────────────────────────────────────
@@ -80,6 +92,21 @@ const PartidoCard = ({ partido, pick, onPick, index }) => (
   </div>
 );
 
+// ─── MODAL REGLAS (se muestra después de iniciar sesión) ────────────────────
+const RulesModal = ({ onClose }) => (
+  <div className="rules-modal-overlay" onClick={onClose}>
+    <div className="rules-modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="rules-modal-icon">📋</div>
+      <h3 className="rules-modal-title">Reglas de la quiniela</h3>
+      <p className="rules-modal-text">Gana el usuario que genere más aciertos.</p>
+      <p className="rules-modal-note">
+        <strong>Nota: En caso de empate se usa el criterio de goles (el que se acerque más "sin pasarse").</strong>
+      </p>
+      <button type="button" className="rules-modal-btn" onClick={onClose}>Entendido</button>
+    </div>
+  </div>
+);
+
 const Header = ({ jornada, user, onLogout }) => (
   <header className="site-header">
     <div className="header-inner">
@@ -92,8 +119,8 @@ const Header = ({ jornada, user, onLogout }) => (
   </header>
 );
 
-// ─── PRONOSTICOS GRID (todos los participantes) ─────────────────────────────
-const PronosticosGrid = ({ partidos, allPronosticos }) => (
+// ─── PRONOSTICOS GRID (todos los participantes) — aquí se muestran L, E, V y Total Aciertos ───
+const PronosticosGrid = ({ partidos, allPronosticos, resultados }) => (
   <div className="pronosticos-grid-wrap">
     <h3 className="pronosticos-title">📊 PRONÓSTICOS COMPLETOS — JORNADA {JORNADA_ACTUAL}</h3>
     <p className="pronosticos-sub">{TEMPORADA} · {allPronosticos.length} participante(s)</p>
@@ -108,20 +135,25 @@ const PronosticosGrid = ({ partidos, allPronosticos }) => (
           </div>
         ))}
         <div className="pronosticos-cell pronosticos-goles-header"><span className="ph-local">Total</span><span className="ph-vs">⚽</span><span className="ph-visit">Goles</span></div>
+        <div className="pronosticos-cell pronosticos-aciertos-header">Aciertos</div>
       </div>
-      {allPronosticos.map((pro) => (
-        <div key={pro.user_id} className="pronosticos-row">
-          <div className="pronosticos-cell pronosticos-user-cell">
-            <span className="pu-avatar">👤</span>
-            <span className="pu-name">{pro.nombre_usuario}</span>
+      {allPronosticos.map((pro) => {
+        const aciertos = countAciertos(pro.picks, resultados);
+        return (
+          <div key={pro.user_id} className="pronosticos-row">
+            <div className="pronosticos-cell pronosticos-user-cell">
+              <span className="pu-avatar">👤</span>
+              <span className="pu-name">{pro.nombre_usuario}</span>
+            </div>
+            {partidos.map((p) => {
+              const pick = pro.picks?.[String(p.id)] || "-";
+              return <div key={p.id} className={`pronosticos-cell pronosticos-pick-cell ${getGridPickClass(pick, p.id, resultados)}`}>{pickToLabelGrid(pick)}</div>;
+            })}
+            <div className="pronosticos-cell pronosticos-goles-cell">{pro.total_goles}</div>
+            <div className="pronosticos-cell pronosticos-aciertos-cell">{aciertos != null ? aciertos : "—"}</div>
           </div>
-          {partidos.map((p) => {
-            const pick = pro.picks?.[String(p.id)] || "-";
-            return <div key={p.id} className={`pronosticos-cell pronosticos-pick-cell ${getResultColor(pick)}`}>{pick}</div>;
-          })}
-          <div className="pronosticos-cell pronosticos-goles-cell">{pro.total_goles}</div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   </div>
 );
@@ -154,7 +186,7 @@ const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos })
       </div>
       {show && (
         <div id="pronosticos-section" className="pronosticos-section-anim">
-          <PronosticosGrid partidos={partidos} allPronosticos={allPronosticos} />
+          <PronosticosGrid partidos={partidos} allPronosticos={allPronosticos} resultados={RESULTADOS_J11} />
         </div>
       )}
     </div>
@@ -255,6 +287,7 @@ export default function QuinielaMX() {
   const [countdown, setCountdown] = useState("--:--:--");
   const [allPronosticos, setAllPronosticos] = useState([]);
   const [sendError, setSendError] = useState("");
+  const [showRulesModal, setShowRulesModal] = useState(false);
 
   const cierreMs = new Date("2026-03-13T18:00:00").getTime();
 
@@ -265,10 +298,12 @@ export default function QuinielaMX() {
       if (session) loadPerfil(session.user.id);
       else setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_ev, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((ev, session) => {
       setSession(session);
-      if (session) loadPerfil(session.user.id);
-      else { setPerfil(null); setLoading(false); }
+      if (session) {
+        if (ev === "SIGNED_IN") setShowRulesModal(true);
+        loadPerfil(session.user.id);
+      } else { setPerfil(null); setLoading(false); setShowRulesModal(false); }
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -347,7 +382,9 @@ export default function QuinielaMX() {
 
   // ── Confirm / Grid ──
   if (enviada) return (
-    <><style>{CSS}</style><div id="app-shell"><Header jornada={jornada} user={perfil} onLogout={handleLogout}/>
+    <><style>{CSS}</style>
+      {showRulesModal && <RulesModal onClose={() => setShowRulesModal(false)} />}
+      <div id="app-shell"><Header jornada={jornada} user={perfil} onLogout={handleLogout}/>
       <main><ConfirmScreen partidos={partidos} picks={picks} jornada={jornada} totalGoles={totalGoles} allPronosticos={allPronosticos}/></main>
     </div></>
   );
@@ -355,7 +392,9 @@ export default function QuinielaMX() {
   // ── Quiniela ──
   const progress = totalPartidos === 0 ? 0 : totalFilled / totalPartidos;
   return (
-    <><style>{CSS}</style><div id="app-shell"><Header jornada={jornada} user={perfil} onLogout={handleLogout}/>
+    <><style>{CSS}</style>
+      {showRulesModal && <RulesModal onClose={() => setShowRulesModal(false)} />}
+      <div id="app-shell"><Header jornada={jornada} user={perfil} onLogout={handleLogout}/>
       <main><div className="page-layout">
         <section className="partidos-section">
           <div className="section-header"><span className="section-title">Pronósticos</span><span className="jornada-tag">JORNADA {jornada} · {TEMPORADA}</span></div>
@@ -435,9 +474,8 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .pick-label{font-family:'Bebas Neue',sans-serif;font-size:1.3rem;letter-spacing:2px;display:block;line-height:1}
 .pick-desc{font-size:0.62rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-top:3px;display:block}
 .pick-check{position:absolute;top:6px;right:8px;font-size:0.65rem}
-.sel-1{background:rgba(0,201,141,0.15)!important;border-color:rgba(0,201,141,0.6)!important;color:var(--green)!important}.sel-1 .pick-desc{color:var(--green)}
+.sel-1,.sel-2{background:rgba(0,201,141,0.15)!important;border-color:rgba(0,201,141,0.6)!important;color:var(--green)!important}.sel-1 .pick-desc,.sel-2 .pick-desc{color:var(--green)}
 .sel-x{background:rgba(240,180,41,0.15)!important;border-color:rgba(240,180,41,0.6)!important;color:var(--gold)!important}.sel-x .pick-desc{color:var(--gold)}
-.sel-2{background:rgba(255,71,87,0.15)!important;border-color:rgba(255,71,87,0.6)!important;color:var(--red)!important}.sel-2 .pick-desc{color:var(--red)}
 .summary-panel{position:sticky;top:88px}
 .panel-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
 .panel-title{font-family:'Oswald',sans-serif;font-size:1rem;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)}
@@ -446,7 +484,7 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .summary-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:0.8rem}.summary-row:last-child{border-bottom:none}
 .summary-teams{font-weight:600;font-size:0.76rem}.summary-fecha{font-size:0.66rem;color:var(--muted);margin-top:2px}
 .summary-result{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:1px}
-.result-1{color:var(--green)}.result-x{color:var(--gold)}.result-2{color:var(--red)}
+.result-1,.result-2{color:var(--green)}.result-x{color:var(--gold)}
 .send-error{color:var(--red);font-size:0.78rem;text-align:center;margin-bottom:10px;letter-spacing:0.5px}
 .submit-btn{width:100%;background:linear-gradient(135deg,#f0b429,#ff6b35);border:none;border-radius:var(--radius-sm);color:#000;font-family:'Oswald',sans-serif;font-size:0.95rem;font-weight:700;letter-spacing:2px;padding:14px;cursor:pointer;text-transform:uppercase;transition:opacity 0.2s,transform 0.15s;box-shadow:0 4px 20px rgba(240,180,41,0.3)}
 .submit-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 28px rgba(240,180,41,0.45)}.submit-btn:disabled{opacity:0.35;cursor:not-allowed}
@@ -454,7 +492,7 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .rules-title{font-size:0.7rem;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
 .rule-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:0.78rem;color:var(--muted)}
 .rtag{width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:'Bebas Neue',sans-serif;font-size:0.9rem;flex-shrink:0}
-.rtag-1{background:rgba(0,201,141,0.2);color:var(--green)}.rtag-x{background:rgba(240,180,41,0.2);color:var(--gold)}.rtag-2{background:rgba(255,71,87,0.2);color:var(--red)}
+.rtag-1,.rtag-2{background:rgba(0,201,141,0.2);color:var(--green)}.rtag-x{background:rgba(240,180,41,0.2);color:var(--gold)}
 .confirm-screen-full{display:flex;flex-direction:column;align-items:center;padding:40px 20px 60px;min-height:80vh}
 .confirm-card{background:var(--card);border:1px solid var(--border-gold);border-radius:var(--radius);padding:40px;max-width:540px;width:100%;text-align:center;animation:fadeSlideIn 0.5s ease both}
 .confirm-icon{font-size:3rem;margin-bottom:12px}.confirm-title{font-family:'Bebas Neue',sans-serif;font-size:2.2rem;letter-spacing:3px;color:var(--gold);margin-bottom:4px}
@@ -509,8 +547,8 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .pronosticos-title{font-family:'Oswald',sans-serif;font-size:1.1rem;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:4px}
 .pronosticos-sub{font-size:0.72rem;color:var(--muted);letter-spacing:2px;margin-bottom:20px}
 .pronosticos-table{display:grid;grid-template-rows:auto;gap:0;min-width:700px}
-.pronosticos-header{display:grid;grid-template-columns:160px repeat(9,1fr) 80px;gap:2px}
-.pronosticos-row{display:grid;grid-template-columns:160px repeat(9,1fr) 80px;gap:2px;margin-top:2px}
+.pronosticos-header{display:grid;grid-template-columns:160px repeat(9,1fr) 80px 70px;gap:2px}
+.pronosticos-row{display:grid;grid-template-columns:160px repeat(9,1fr) 80px 70px;gap:2px;margin-top:2px}
 .pronosticos-cell{padding:10px 6px;text-align:center;font-size:0.75rem;border-radius:4px}
 .pronosticos-user-header{background:rgba(240,180,41,0.15);color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.7rem;letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;justify-content:center}
 .pronosticos-match-header{background:var(--card2);border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 4px}
@@ -518,11 +556,21 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .ph-vs{font-size:0.55rem;color:var(--muted);letter-spacing:1px}
 .pronosticos-user-cell{background:var(--card2);border:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:10px 12px;text-align:left}
 .pu-avatar{font-size:1.1rem}.pu-name{font-family:'Oswald',sans-serif;font-size:0.82rem;font-weight:600;color:var(--text);letter-spacing:0.5px}
-.pronosticos-pick-cell{background:rgba(255,255,255,0.03);border:1px solid var(--border);font-family:'Bebas Neue',sans-serif;font-size:1.2rem;letter-spacing:2px;display:flex;align-items:center;justify-content:center}
-.pronosticos-pick-cell.result-1{background:rgba(0,201,141,0.12);color:var(--green);border-color:rgba(0,201,141,0.3)}
-.pronosticos-pick-cell.result-x{background:rgba(240,180,41,0.12);color:var(--gold);border-color:rgba(240,180,41,0.3)}
-.pronosticos-pick-cell.result-2{background:rgba(255,71,87,0.12);color:var(--red);border-color:rgba(255,71,87,0.3)}
+.pronosticos-pick-cell{background:#0a0a0f;border:1px solid var(--border);font-family:'Bebas Neue',sans-serif;font-size:1.2rem;letter-spacing:2px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;text-shadow:0 0 12px rgba(255,255,255,0.15)}
+.pronosticos-pick-cell.result-acierto{background:rgba(0,201,141,0.35);color:var(--green);border-color:rgba(0,201,141,0.5);text-shadow:0 0 14px rgba(0,201,141,0.4)}
 .pronosticos-goles-header{background:rgba(240,180,41,0.12);border:1px solid rgba(240,180,41,0.3);display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 4px}
 .pronosticos-goles-cell{background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:var(--gold);letter-spacing:2px;display:flex;align-items:center;justify-content:center}
+.pronosticos-aciertos-header{background:rgba(0,201,141,0.15);border:1px solid rgba(0,201,141,0.35);font-family:'Oswald',sans-serif;font-size:0.68rem;letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;justify-content:center;color:var(--green)}
+.pronosticos-aciertos-cell{background:rgba(0,201,141,0.08);border:1px solid rgba(0,201,141,0.25);font-family:'Bebas Neue',sans-serif;font-size:1.2rem;color:var(--green);letter-spacing:2px;display:flex;align-items:center;justify-content:center}
+.rules-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;animation:fadeIn 0.25s ease}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.rules-modal-card{background:var(--card);border:1px solid var(--border-gold);border-radius:var(--radius);padding:28px 32px;max-width:420px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.5);animation:fadeSlideIn 0.35s ease both}
+.rules-modal-icon{font-size:2.5rem;margin-bottom:12px}
+.rules-modal-title{font-family:'Oswald',sans-serif;font-size:1.1rem;letter-spacing:3px;color:var(--gold);text-transform:uppercase;margin-bottom:16px}
+.rules-modal-text{font-size:0.95rem;color:var(--text);margin-bottom:14px;line-height:1.4}
+.rules-modal-note{font-size:0.85rem;color:var(--muted);line-height:1.45;margin-bottom:20px}
+.rules-modal-note strong{color:var(--text);font-weight:700}
+.rules-modal-btn{background:linear-gradient(135deg,#f0b429,#ff6b35);border:none;border-radius:var(--radius-sm);color:#000;font-family:'Oswald',sans-serif;font-size:0.9rem;font-weight:700;letter-spacing:2px;padding:12px 28px;cursor:pointer;text-transform:uppercase;transition:transform 0.15s,box-shadow 0.2s}
+.rules-modal-btn:hover{transform:translateY(-2px);box-shadow:0 4px 20px rgba(240,180,41,0.4)}
 @media(max-width:768px){.page-layout{grid-template-columns:1fr;padding:16px}.summary-panel{position:static}.header-inner{padding:0 16px}.partido-info{display:none}.login-card{margin:16px;padding:32px 24px}}
 `;
