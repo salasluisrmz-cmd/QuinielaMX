@@ -42,8 +42,7 @@ const PARTIDOS_J11 = [
   { id:9, jornada:11, local:{nombre:"América",color:"#F5A623"}, visitante:{nombre:"Mazatlán",color:"#FF6F00"}, fecha:"Dom 15 Mar",hora:"19:00",estadio:"Estadio Azteca" },
 ];
 
-// Resultados reales por partido (id: "1"|"X"|"2") para calcular aciertos en la tabla. Ej: { 1: "1", 2: "X", 3: "2", ... }
-const RESULTADOS_J11 = {};
+// Resultados: se cargan desde Supabase (tabla resultados). Se actualizan con la Edge Function sync-resultados desde ESPN.
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 const formatCountdown = (ms) => {
@@ -153,11 +152,16 @@ const Header = ({ jornada, user, onLogout }) => (
 );
 
 // ─── PRONOSTICOS GRID (todos los participantes) — aquí se muestran L, E, V y Total Aciertos ───
-const PronosticosGrid = ({ partidos, allPronosticos, resultados }) => (
+const PronosticosGrid = ({ partidos, allPronosticos, resultados, totalGolesReales }) => (
   <div className="pronosticos-grid-wrap">
     <h3 className="pronosticos-title">📊 PRONÓSTICOS COMPLETOS — JORNADA {JORNADA_ACTUAL}</h3>
     <p className="pronosticos-sub">{TEMPORADA} · {allPronosticos.length} participante(s)</p>
     <div className="pronosticos-table">
+      <div className="pronosticos-header pronosticos-total-row">
+        <div className="pronosticos-cell pronosticos-total-label">Total goles acumulado en la jornada</div>
+        <div className="pronosticos-cell pronosticos-total-value">{totalGolesReales != null ? totalGolesReales : "—"}</div>
+        <div className="pronosticos-cell pronosticos-total-aciertos-spacer" />
+      </div>
       <div className="pronosticos-header">
         <div className="pronosticos-cell pronosticos-user-header">Participante</div>
         {partidos.map((p) => (
@@ -192,7 +196,7 @@ const PronosticosGrid = ({ partidos, allPronosticos, resultados }) => (
 );
 
 // ─── CONFIRM SCREEN ──────────────────────────────────────────────────────────
-const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos }) => {
+const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos, resultados, totalGolesReales, onSyncResultados, syncingResultados }) => {
   const [cd, setCd] = useState(5);
   const [show, setShow] = useState(false);
   useEffect(() => { if (cd <= 0) { setShow(true); return; } const t = setTimeout(() => setCd(s => s-1), 1000); return () => clearTimeout(t); }, [cd]);
@@ -219,7 +223,18 @@ const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos })
       </div>
       {show && (
         <div id="pronosticos-section" className="pronosticos-section-anim">
-          <PronosticosGrid partidos={partidos} allPronosticos={allPronosticos} resultados={RESULTADOS_J11} />
+          <PronosticosGrid partidos={partidos} allPronosticos={allPronosticos} resultados={resultados || {}} totalGolesReales={totalGolesReales} />
+        {(totalGolesReales != null && totalGolesReales > 0) && (
+          <div className="total-goles-reales">
+            <span className="total-goles-label">⚽ Total goles en la jornada (reales)</span>
+            <span className="total-goles-value">{totalGolesReales}</span>
+          </div>
+        )}
+        {onSyncResultados && (
+          <button type="button" className="sync-resultados-btn" onClick={onSyncResultados} disabled={syncingResultados}>
+            {syncingResultados ? "Actualizando…" : "🔄 Actualizar resultados desde ESPN"}
+          </button>
+        )}
         </div>
       )}
     </div>
@@ -282,6 +297,16 @@ const AuthScreen = ({ onAuth }) => {
         <div className="login-divider"><span className="login-divider-line"/><span className="login-divider-text">{mode === "login" ? "INICIAR SESIÓN" : "CREAR CUENTA"}</span><span className="login-divider-line"/></div>
 
         <div className="login-form">
+          {mode === "login" && (
+            <div className="payment-compact">
+              <span className="payment-compact-title">Métodos de pago</span>
+              <div className="payment-compact-row">
+                <span className="payment-compact-item"><strong>OXXO</strong> 5101 2584 5161 1480</span>
+                <span className="payment-compact-item"><strong>Transferencia</strong> 638180010145556487</span>
+              </div>
+              <img src="/nu.png" alt="Nu" className="payment-compact-logo" />
+            </div>
+          )}
           {mode === "register" && (
             <>
               <div className="login-field"><label className="login-label">Nombre completo</label><div className="login-input-wrap"><span className="login-input-icon">📝</span><input type="text" className="login-input" placeholder="Ej: Juan Pérez López" value={nombreCompleto} onChange={e=>setNombreCompleto(e.target.value)} /></div></div>
@@ -296,6 +321,25 @@ const AuthScreen = ({ onAuth }) => {
           <button className="login-btn" onClick={handleSubmit} disabled={loading}>
             {loading ? "CARGANDO..." : mode === "login" ? "INGRESAR" : "CREAR CUENTA"}
           </button>
+
+          {mode === "register" && (
+            <div className="payment-card">
+              <h3 className="payment-card-title">Métodos de pago</h3>
+              <div className="payment-methods">
+                <div className="payment-method">
+                  <span className="payment-method-label">OXXO</span>
+                  <span className="payment-method-value">5101 2584 5161 1480</span>
+                </div>
+                <div className="payment-method">
+                  <span className="payment-method-label">Transferencia</span>
+                  <span className="payment-method-value">638180010145556487</span>
+                </div>
+              </div>
+              <div className="payment-nu">
+                <img src="/nu.png" alt="Nu" className="payment-nu-logo" />
+              </div>
+            </div>
+          )}
 
           <p className="login-toggle" onClick={() => { setMode(mode === "login" ? "register" : "login"); setError(""); }}>
             {mode === "login" ? "¿No tienes cuenta? Regístrate" : "¿Ya tienes cuenta? Inicia sesión"}
@@ -319,8 +363,11 @@ export default function QuinielaMX() {
   const [jornada] = useState(JORNADA_ACTUAL);
   const [countdown, setCountdown] = useState("--:--:--");
   const [allPronosticos, setAllPronosticos] = useState([]);
+  const [resultados, setResultados] = useState({});
+  const [totalGolesReales, setTotalGolesReales] = useState(null);
   const [sendError, setSendError] = useState("");
   const [showRulesModal, setShowRulesModal] = useState(false);
+  const [syncingResultados, setSyncingResultados] = useState(false);
 
   const cierreMs = new Date("2026-03-13T18:00:00").getTime();
 
@@ -353,7 +400,55 @@ export default function QuinielaMX() {
       setYaEnvio(true);
     }
     await loadAllPronosticos();
+    await loadResultados();
     setLoading(false);
+  };
+
+  const loadResultados = async () => {
+    const { data } = await supabase.from("resultados").select("partido_id, resultado, goles_local, goles_visitante").eq("jornada", JORNADA_ACTUAL).eq("temporada", TEMPORADA);
+    if (data?.length) {
+      const obj = {};
+      let total = 0;
+      data.forEach((r) => {
+        obj[r.partido_id] = r.resultado;
+        if (r.goles_local != null && r.goles_visitante != null) total += (r.goles_local || 0) + (r.goles_visitante || 0);
+      });
+      setResultados(obj);
+      setTotalGolesReales(total > 0 ? total : null);
+    } else {
+      setTotalGolesReales(null);
+    }
+  };
+
+  const handleSyncResultados = async () => {
+    setSyncingResultados(true);
+    setSendError("");
+    try {
+      let data;
+      if (import.meta.env.DEV) {
+        // Desarrollo: proxy de Vite (mismo origen) → sin CORS. La función usa verify_jwt = false.
+        const res = await fetch("/api/sync-resultados", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ temporada: TEMPORADA, jornada: JORNADA_ACTUAL }),
+        });
+        data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error || res.statusText);
+      } else {
+        const { data: invData, error } = await supabase.functions.invoke("sync-resultados", {
+          body: { temporada: TEMPORADA, jornada: JORNADA_ACTUAL },
+        });
+        if (error) throw new Error(error.message);
+        data = invData;
+      }
+      if (data && !data.ok) throw new Error(data.error || "Error al sincronizar");
+      await loadResultados();
+    } catch (e) {
+      console.error("Sync resultados:", e);
+      setSendError((e && e.message) || "No se pudieron actualizar resultados. Despliega la Edge Function sync-resultados.");
+    } finally {
+      setSyncingResultados(false);
+    }
   };
 
   const loadAllPronosticos = async () => {
@@ -418,7 +513,7 @@ export default function QuinielaMX() {
     <><style>{CSS}</style>
       {showRulesModal && <RulesModal onClose={() => setShowRulesModal(false)} />}
       <div id="app-shell"><Header jornada={jornada} user={perfil} onLogout={handleLogout}/>
-      <main><ConfirmScreen partidos={partidos} picks={picks} jornada={jornada} totalGoles={totalGoles} allPronosticos={allPronosticos}/></main>
+      <main><ConfirmScreen partidos={partidos} picks={picks} jornada={jornada} totalGoles={totalGoles} allPronosticos={allPronosticos} resultados={resultados} totalGolesReales={totalGolesReales} onSyncResultados={handleSyncResultados} syncingResultados={syncingResultados}/></main>
     </div></>
   );
 
@@ -542,6 +637,12 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .confirm-cd-text{font-size:0.85rem;color:var(--muted);letter-spacing:1px;margin-top:6px}
 .confirm-goto{margin-top:24px;text-align:center;color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.95rem;letter-spacing:2px;cursor:pointer;padding:12px 24px;border:1px solid var(--border-gold);border-radius:var(--radius-sm);background:rgba(240,180,41,0.08);transition:all 0.2s}
 .confirm-goto:hover{background:rgba(240,180,41,0.15);transform:translateY(-1px)}
+.total-goles-reales{margin-top:12px;margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:10px;padding:12px 20px;background:rgba(240,180,41,0.1);border:1px solid rgba(240,180,41,0.35);border-radius:var(--radius-sm);max-width:400px;margin-left:auto;margin-right:auto}
+.total-goles-label{font-family:'Oswald',sans-serif;font-size:0.8rem;letter-spacing:1px;color:var(--gold);text-transform:uppercase}
+.total-goles-value{font-family:'Bebas Neue',sans-serif;font-size:1.6rem;color:var(--gold);letter-spacing:2px}
+.sync-resultados-btn{margin-top:16px;width:100%;max-width:400px;margin-left:auto;margin-right:auto;display:block;padding:12px 20px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'Oswald',sans-serif;font-size:0.85rem;letter-spacing:2px;cursor:pointer;transition:all 0.2s}
+.sync-resultados-btn:hover:not(:disabled){border-color:var(--gold);color:var(--gold);background:rgba(240,180,41,0.08)}
+.sync-resultados-btn:disabled{opacity:0.6;cursor:not-allowed}
 .loading-screen{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:16px;color:var(--muted)}
 .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--gold);border-radius:50%;animation:spin 0.8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -570,6 +671,20 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .login-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 32px rgba(240,180,41,0.45)}.login-btn:active{transform:translateY(0)}.login-btn:disabled{opacity:0.5;cursor:not-allowed}
 .login-error{color:var(--red);font-size:0.8rem;text-align:center;margin-bottom:10px;padding:8px;background:rgba(255,71,87,0.1);border-radius:var(--radius-sm);border:1px solid rgba(255,71,87,0.2)}
 .login-toggle{text-align:center;color:var(--gold);font-size:0.82rem;margin-top:20px;cursor:pointer;letter-spacing:0.5px;transition:color 0.2s}.login-toggle:hover{color:var(--gold2)}
+.payment-compact{margin-bottom:20px;padding:12px 14px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;text-align:center}
+.payment-compact-title{font-family:'Oswald',sans-serif;font-size:0.68rem;letter-spacing:1.5px;color:var(--gold);text-transform:uppercase;display:block;margin-bottom:8px}
+.payment-compact-row{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+.payment-compact-item{font-size:1.24rem;color:#fff;line-height:1.4;font-weight:500}
+.payment-compact-item strong{color:#5C9EFF;font-size:1.3rem;font-weight:700;letter-spacing:0.5px}
+.payment-compact-logo{height:28px;width:auto;object-fit:contain;opacity:0.9}
+.payment-card{margin-top:24px;padding:20px;background:rgba(255,255,255,0.04);border:1px solid var(--border-gold);border-radius:var(--radius-sm);}
+.payment-card-title{font-family:'Oswald',sans-serif;font-size:0.85rem;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin:0 0 14px 0;text-align:center}
+.payment-methods{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.payment-method{display:flex;flex-direction:column;gap:4px;padding:10px 14px;background:rgba(0,0,0,0.2);border-radius:8px;border:1px solid var(--border)}
+.payment-method-label{font-family:'Oswald',sans-serif;font-size:0.78rem;letter-spacing:1px;color:#5C9EFF;text-transform:uppercase;font-weight:600}
+.payment-method-value{font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:2px;color:#fff;word-break:break-all}
+.payment-nu{display:flex;justify-content:center;align-items:center;padding-top:8px;border-top:1px dashed rgba(240,180,41,0.3)}
+.payment-nu-logo{height:44px;width:auto;object-fit:contain}
 .goles-field{background:var(--card);border:1px solid var(--border-gold);border-radius:var(--radius-sm);padding:14px 18px;margin-bottom:16px}
 .goles-label{display:block;font-family:'Oswald',sans-serif;font-size:0.82rem;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:8px}
 .goles-input-row{display:flex;align-items:center;gap:10px}
@@ -582,12 +697,16 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .pronosticos-sub{font-size:0.72rem;color:var(--muted);letter-spacing:2px;margin-bottom:20px}
 .pronosticos-table{display:grid;grid-template-rows:auto;gap:0;min-width:700px}
 .pronosticos-header{display:grid;grid-template-columns:160px repeat(9,1fr) 80px 70px;gap:2px}
+.pronosticos-total-row{display:grid;grid-template-columns:160px repeat(9,1fr) 80px 70px;gap:2px;margin-bottom:2px}
+.pronosticos-total-label{grid-column:1/span 10;background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);border-radius:4px;padding:8px 12px;text-align:right;font-family:'Oswald',sans-serif;font-size:0.75rem;letter-spacing:1px;color:var(--gold);text-transform:uppercase;display:flex;align-items:center;justify-content:flex-end}
+.pronosticos-total-value{grid-column:11;background:rgba(240,180,41,0.15);border:1px solid rgba(240,180,41,0.35);border-radius:4px;font-family:'Bebas Neue',sans-serif;font-size:1.5rem;color:var(--gold);letter-spacing:2px;display:flex;align-items:center;justify-content:center}
+.pronosticos-total-aciertos-spacer{grid-column:12;background:transparent;border:none}
 .pronosticos-row{display:grid;grid-template-columns:160px repeat(9,1fr) 80px 70px;gap:2px;margin-top:2px}
 .pronosticos-cell{padding:10px 6px;text-align:center;font-size:0.75rem;border-radius:4px}
 .pronosticos-user-header{background:rgba(240,180,41,0.15);color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.7rem;letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;justify-content:center}
 .pronosticos-match-header{background:var(--card2);border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 4px}
 .ph-local,.ph-visit{font-family:'Oswald',sans-serif;font-size:0.68rem;font-weight:600;letter-spacing:0.5px;color:var(--text)}
-.ph-vs{font-size:0.55rem;color:var(--muted);letter-spacing:1px}
+.ph-vs{font-size:0.7rem;font-weight:700;color:#5C9EFF;letter-spacing:1px}
 .pronosticos-user-cell{background:var(--card2);border:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:10px 12px;text-align:left}
 .pu-avatar{font-size:1.1rem}.pu-name{font-family:'Oswald',sans-serif;font-size:0.82rem;font-weight:600;color:var(--text);letter-spacing:0.5px}
 .pronosticos-pick-cell{background:#0a0a0f;border:1px solid var(--border);font-family:'Bebas Neue',sans-serif;font-size:1.2rem;letter-spacing:2px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;text-shadow:0 0 12px rgba(255,255,255,0.15)}

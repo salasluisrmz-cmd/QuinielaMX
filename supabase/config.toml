@@ -1,0 +1,4 @@
+# Edge Function sync-resultados: no exige JWT de usuario (evita 401 con anon key).
+# Tras cambiar esto, redeploy: npx supabase functions deploy sync-resultados
+[functions.sync-resultados]
+verify_jwt = false
