@@ -142,7 +142,7 @@ const RulesModal = ({ onClose }) => (
 const Header = ({ jornada, user, onLogout }) => (
   <header className="site-header">
     <div className="header-inner">
-      <div className="brand"><div className="brand-icon">⚽</div><div><div className="brand-name">QUINIELA MX</div><div className="brand-sub">Liga BBVA MX · {TEMPORADA}</div></div></div>
+      <div className="brand"><div className="brand-icon">⚽</div><div><div className="brand-name">QUINIELA MX SALAS</div><div className="brand-sub">Liga BBVA MX · {TEMPORADA}</div></div></div>
       <div className="header-right">
         <div className="torneo-pill">Jornada {jornada || "..."}</div>
         {user && <button className="logout-btn" onClick={onLogout}>Salir</button>}
@@ -292,7 +292,7 @@ const AuthScreen = ({ onAuth }) => {
       <div className="login-particles">{[...Array(6)].map((_, i) => (<div key={i} className="login-particle" style={{ left:`${15+i*14}%`, animationDelay:`${i*0.7}s`, animationDuration:`${3+i*0.5}s` }}/>))}</div>
       <div className={`login-card ${shake ? "login-shake" : ""}`}>
         <div className="login-logo"><div className="login-logo-icon">⚽</div></div>
-        <h1 className="login-title">QUINIELA MX</h1>
+        <h1 className="login-title">QUINIELA MX SALAS</h1>
         <p className="login-subtitle">Liga BBVA MX · {TEMPORADA}</p>
         <div className="login-divider"><span className="login-divider-line"/><span className="login-divider-text">{mode === "login" ? "INICIAR SESIÓN" : "CREAR CUENTA"}</span><span className="login-divider-line"/></div>
 
