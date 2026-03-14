@@ -74,6 +74,15 @@ const getGridPickClass = (pick, partidoId, resultados) => {
   if (!resultados || !resultados[partidoId] || pick === "-" || pick === "") return "";
   return pick === resultados[partidoId] ? "result-acierto" : "";
 };
+// Ganadores del total de goles: los que más se acercaron sin pasarse (máximo entre los que total_goles <= totalGolesReales)
+const getTotalGolesWinners = (allPronosticos, totalGolesReales) => {
+  if (totalGolesReales == null || totalGolesReales < 0 || !allPronosticos?.length) return new Set();
+  const valid = allPronosticos.filter((p) => p.total_goles != null && Number(p.total_goles) <= totalGolesReales);
+  if (!valid.length) return new Set();
+  const maxVal = Math.max(...valid.map((p) => Number(p.total_goles)));
+  const winners = valid.filter((p) => Number(p.total_goles) === maxVal).map((p) => p.user_id);
+  return new Set(winners);
+};
 
 // ─── SMALL COMPONENTS ────────────────────────────────────────────────────────
 const ProgressRing = ({ filled, total }) => {
@@ -152,7 +161,9 @@ const Header = ({ jornada, user, onLogout }) => (
 );
 
 // ─── PRONOSTICOS GRID (todos los participantes) — aquí se muestran L, E, V y Total Aciertos ───
-const PronosticosGrid = ({ partidos, allPronosticos, resultados, totalGolesReales }) => (
+const PronosticosGrid = ({ partidos, allPronosticos, resultados, totalGolesReales }) => {
+  const totalGolesWinners = getTotalGolesWinners(allPronosticos, totalGolesReales);
+  return (
   <div className="pronosticos-grid-wrap">
     <h3 className="pronosticos-title">📊 PRONÓSTICOS COMPLETOS — JORNADA {JORNADA_ACTUAL}</h3>
     <p className="pronosticos-sub">{TEMPORADA} · {allPronosticos.length} participante(s)</p>
@@ -175,7 +186,9 @@ const PronosticosGrid = ({ partidos, allPronosticos, resultados, totalGolesReale
         <div className="pronosticos-cell pronosticos-aciertos-header">Aciertos</div>
       </div>
       {allPronosticos.map((pro) => {
-        const aciertos = countAciertos(pro.picks, resultados);
+        const aciertosPicks = countAciertos(pro.picks, resultados);
+        const ganaTotalGoles = totalGolesWinners.has(pro.user_id);
+        const aciertosTotal = aciertosPicks != null ? aciertosPicks + (ganaTotalGoles ? 1 : 0) : (ganaTotalGoles ? 1 : null);
         return (
           <div key={pro.user_id} className="pronosticos-row">
             <div className="pronosticos-cell pronosticos-user-cell">
@@ -186,14 +199,15 @@ const PronosticosGrid = ({ partidos, allPronosticos, resultados, totalGolesReale
               const pick = pro.picks?.[String(p.id)] || "-";
               return <div key={p.id} className={`pronosticos-cell pronosticos-pick-cell ${getGridPickClass(pick, p.id, resultados)}`}>{pickToLabelGrid(pick)}</div>;
             })}
-            <div className="pronosticos-cell pronosticos-goles-cell">{pro.total_goles}</div>
-            <div className="pronosticos-cell pronosticos-aciertos-cell">{aciertos != null ? aciertos : "—"}</div>
+            <div className={`pronosticos-cell pronosticos-goles-cell${ganaTotalGoles ? " pronosticos-goles-cell-acierto" : ""}`}>{pro.total_goles}</div>
+            <div className="pronosticos-cell pronosticos-aciertos-cell">{aciertosTotal != null ? aciertosTotal : "—"}</div>
           </div>
         );
       })}
     </div>
   </div>
-);
+  );
+};
 
 // ─── CONFIRM SCREEN ──────────────────────────────────────────────────────────
 const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos, resultados, totalGolesReales, onSyncResultados, syncingResultados, returningUser, sendError }) => {
@@ -305,7 +319,7 @@ const AuthScreen = ({ onAuth }) => {
         <div className="login-form">
           {mode === "login" && (
             <div className="payment-compact">
-              <span className="payment-compact-title">Métodos de pago</span>
+              <span className="payment-compact-title">Métodos de pago — $40</span>
               <div className="payment-compact-row">
                 <span className="payment-compact-item"><strong>OXXO</strong> 5101 2584 5161 1480</span>
                 <span className="payment-compact-item"><strong>Transferencia</strong> 638180010145556487</span>
@@ -330,7 +344,7 @@ const AuthScreen = ({ onAuth }) => {
 
           {mode === "register" && (
             <div className="payment-card">
-              <h3 className="payment-card-title">Métodos de pago</h3>
+              <h3 className="payment-card-title">Métodos de pago — $40</h3>
               <div className="payment-methods">
                 <div className="payment-method">
                   <span className="payment-method-label">OXXO</span>
@@ -767,6 +781,7 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .pronosticos-pick-cell.result-acierto{background:rgba(0,201,141,0.35);color:var(--green);border-color:rgba(0,201,141,0.5);text-shadow:0 0 14px rgba(0,201,141,0.4)}
 .pronosticos-goles-header{background:rgba(240,180,41,0.12);border:1px solid rgba(240,180,41,0.3);display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 4px}
 .pronosticos-goles-cell{background:rgba(240,180,41,0.08);border:1px solid rgba(240,180,41,0.25);font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:var(--gold);letter-spacing:2px;display:flex;align-items:center;justify-content:center}
+.pronosticos-goles-cell-acierto{background:rgba(0,201,141,0.35);color:var(--green);border-color:rgba(0,201,141,0.5)}
 .pronosticos-aciertos-header{background:rgba(0,201,141,0.15);border:1px solid rgba(0,201,141,0.35);font-family:'Oswald',sans-serif;font-size:0.68rem;letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;justify-content:center;color:var(--green)}
 .pronosticos-aciertos-cell{background:rgba(0,201,141,0.08);border:1px solid rgba(0,201,141,0.25);font-family:'Bebas Neue',sans-serif;font-size:1.2rem;color:var(--green);letter-spacing:2px;display:flex;align-items:center;justify-content:center}
 .rules-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;z-index:1000;padding:20px;animation:fadeIn 0.25s ease}
