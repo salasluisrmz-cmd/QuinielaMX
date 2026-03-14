@@ -196,10 +196,15 @@ const PronosticosGrid = ({ partidos, allPronosticos, resultados, totalGolesReale
 );
 
 // ─── CONFIRM SCREEN ──────────────────────────────────────────────────────────
-const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos, resultados, totalGolesReales, onSyncResultados, syncingResultados }) => {
-  const [cd, setCd] = useState(5);
-  const [show, setShow] = useState(false);
+const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos, resultados, totalGolesReales, onSyncResultados, syncingResultados, returningUser, sendError }) => {
+  const [cd, setCd] = useState(returningUser ? 0 : 5);
+  const [show, setShow] = useState(!!returningUser);
   useEffect(() => { if (cd <= 0) { setShow(true); return; } const t = setTimeout(() => setCd(s => s-1), 1000); return () => clearTimeout(t); }, [cd]);
+  useEffect(() => {
+    if (!returningUser) return;
+    const t = setTimeout(() => document.getElementById("pronosticos-section")?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
+    return () => clearTimeout(t);
+  }, [returningUser]);
 
   return (
     <div className="confirm-screen-full">
@@ -223,6 +228,7 @@ const ConfirmScreen = ({ partidos, picks, jornada, totalGoles, allPronosticos, r
       </div>
       {show && (
         <div id="pronosticos-section" className="pronosticos-section-anim">
+          {sendError && <p className="login-error" style={{ marginBottom: 12 }}>{sendError}</p>}
           <PronosticosGrid partidos={partidos} allPronosticos={allPronosticos} resultados={resultados || {}} totalGolesReales={totalGolesReales} />
         {(totalGolesReales != null && totalGolesReales > 0) && (
           <div className="total-goles-reales">
@@ -368,6 +374,8 @@ export default function QuinielaMX() {
   const [sendError, setSendError] = useState("");
   const [showRulesModal, setShowRulesModal] = useState(false);
   const [syncingResultados, setSyncingResultados] = useState(false);
+  const [returningUser, setReturningUser] = useState(false);
+  const [showTablaPronosticos, setShowTablaPronosticos] = useState(false);
 
   const cierreMs = new Date("2026-03-13T18:00:00").getTime();
 
@@ -375,21 +383,35 @@ export default function QuinielaMX() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      if (session) loadPerfil(session.user.id);
+      if (session) loadPerfil(session);
       else setLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((ev, session) => {
       setSession(session);
       if (session) {
         if (ev === "SIGNED_IN") setShowRulesModal(true);
-        loadPerfil(session.user.id);
+        loadPerfil(session);
       } else { setPerfil(null); setLoading(false); setShowRulesModal(false); }
     });
     return () => subscription.unsubscribe();
   }, []);
 
-  const loadPerfil = async (userId) => {
-    const { data } = await supabase.from("perfiles").select("*").eq("id", userId).single();
+  const loadPerfil = async (sessionOrUserId) => {
+    const userId = sessionOrUserId?.user?.id ?? sessionOrUserId;
+    let { data } = await supabase.from("perfiles").select("*").eq("id", userId).single();
+    if (!data && sessionOrUserId?.user) {
+      const email = sessionOrUserId.user.email || "";
+      const nombreUsuario = (email ? email.replace(/@.*/, "").replace(/\W/g, "").slice(0, 20) : null) || "usuario";
+      const { error: insertErr } = await supabase.from("perfiles").insert({
+        id: userId,
+        nombre_completo: sessionOrUserId.user.user_metadata?.full_name || email || "Usuario",
+        nombre_usuario: nombreUsuario,
+      });
+      if (!insertErr) {
+        const res = await supabase.from("perfiles").select("*").eq("id", userId).single();
+        data = res.data;
+      }
+    }
     setPerfil(data);
     // Check if already submitted for this jornada
     const { data: existing } = await supabase.from("pronosticos").select("*").eq("user_id", userId).eq("jornada", JORNADA_ACTUAL).eq("temporada", TEMPORADA).single();
@@ -398,6 +420,7 @@ export default function QuinielaMX() {
       setTotalGoles(String(existing.total_goles));
       setEnviada(true);
       setYaEnvio(true);
+      setReturningUser(true);
     }
     await loadAllPronosticos();
     await loadResultados();
@@ -489,17 +512,25 @@ export default function QuinielaMX() {
       total_goles: parseInt(totalGoles),
     });
     if (error) {
-      setSendError(error.message.includes("duplicate") ? "Ya enviaste tu quiniela para esta jornada" : error.message);
+      const isFk = error.message.includes("foreign key") || error.message.includes("pronosticos_user_id_fkey");
+      if (isFk) {
+        setEnviada(true);
+        setReturningUser(true);
+        setSendError("No se pudo guardar (perfil incompleto). Puedes ver la tabla de pronósticos.");
+      } else {
+        setSendError(error.message.includes("duplicate") ? "Ya enviaste tu quiniela para esta jornada" : error.message);
+      }
       return;
     }
     setEnviada(true);
     setYaEnvio(true);
+    setReturningUser(false);
     await loadAllPronosticos();
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setSession(null); setPerfil(null); setEnviada(false); setPicks({}); setTotalGoles(""); setYaEnvio(false);
+    setSession(null); setPerfil(null); setEnviada(false); setPicks({}); setTotalGoles(""); setYaEnvio(false); setReturningUser(false); setShowTablaPronosticos(false);
   };
 
   // ── Loading ──
@@ -513,7 +544,7 @@ export default function QuinielaMX() {
     <><style>{CSS}</style>
       {showRulesModal && <RulesModal onClose={() => setShowRulesModal(false)} />}
       <div id="app-shell"><Header jornada={jornada} user={perfil} onLogout={handleLogout}/>
-      <main><ConfirmScreen partidos={partidos} picks={picks} jornada={jornada} totalGoles={totalGoles} allPronosticos={allPronosticos} resultados={resultados} totalGolesReales={totalGolesReales} onSyncResultados={handleSyncResultados} syncingResultados={syncingResultados}/></main>
+      <main><ConfirmScreen partidos={partidos} picks={picks} jornada={jornada} totalGoles={totalGoles} allPronosticos={allPronosticos} resultados={resultados} totalGolesReales={totalGolesReales} onSyncResultados={handleSyncResultados} syncingResultados={syncingResultados} returningUser={returningUser} sendError={sendError}/></main>
     </div></>
   );
 
@@ -523,7 +554,23 @@ export default function QuinielaMX() {
     <><style>{CSS}</style>
       {showRulesModal && <RulesModal onClose={() => setShowRulesModal(false)} />}
       <div id="app-shell"><Header jornada={jornada} user={perfil} onLogout={handleLogout}/>
-      <main><div className="page-layout">
+      <main>
+        {showTablaPronosticos ? (
+          <div className="pronosticos-section-anim" style={{ width: "100%", maxWidth: 1100, margin: "0 auto", paddingTop: 24 }}>
+            <button type="button" className="ver-tabla-back-btn" onClick={() => setShowTablaPronosticos(false)}>← Volver a mis pronósticos</button>
+            <PronosticosGrid partidos={partidos} allPronosticos={allPronosticos} resultados={resultados || {}} totalGolesReales={totalGolesReales} />
+            {(totalGolesReales != null && totalGolesReales > 0) && (
+              <div className="total-goles-reales" style={{ marginTop: 12 }}>
+                <span className="total-goles-label">⚽ Total goles en la jornada (reales)</span>
+                <span className="total-goles-value">{totalGolesReales}</span>
+              </div>
+            )}
+            <button type="button" className="sync-resultados-btn" style={{ marginTop: 16 }} onClick={handleSyncResultados} disabled={syncingResultados}>
+              {syncingResultados ? "Actualizando…" : "🔄 Actualizar resultados desde ESPN"}
+            </button>
+          </div>
+        ) : (
+        <div className="page-layout">
         <section className="partidos-section">
           <div className="section-header"><span className="section-title">Pronósticos</span><span className="jornada-tag">JORNADA {jornada} · {TEMPORADA}</span></div>
           {perfil && <p className="welcome-user">Bienvenido, <strong>{perfil.nombre_completo}</strong> (@{perfil.nombre_usuario})</p>}
@@ -546,13 +593,16 @@ export default function QuinielaMX() {
           <button className="submit-btn" disabled={!isComplete} onClick={handleEnviar}>
             {isComplete ? "ENVIAR QUINIELA" : `FALTAN ${faltantes} CAMPO(S)`}
           </button>
+          <button type="button" className="ver-tabla-btn" onClick={() => setShowTablaPronosticos(true)}>Ver tabla de pronósticos</button>
           <div className="rules-box"><div className="rules-title">Sistema 1-X-2</div>
             <div className="rule-row"><span className="rtag rtag-1">1</span> Gana el equipo local</div>
             <div className="rule-row"><span className="rtag rtag-x">X</span> Termina en empate</div>
             <div className="rule-row"><span className="rtag rtag-2">2</span> Gana el visitante</div>
           </div>
         </div></aside>
-      </div></main>
+      </div>
+        )}
+      </main>
     </div></>
   );
 }
@@ -617,6 +667,10 @@ body,#root{background:var(--bg);color:var(--text);font-family:'Rajdhani',sans-se
 .send-error{color:var(--red);font-size:0.78rem;text-align:center;margin-bottom:10px;letter-spacing:0.5px}
 .submit-btn{width:100%;background:linear-gradient(135deg,#f0b429,#ff6b35);border:none;border-radius:var(--radius-sm);color:#000;font-family:'Oswald',sans-serif;font-size:0.95rem;font-weight:700;letter-spacing:2px;padding:14px;cursor:pointer;text-transform:uppercase;transition:opacity 0.2s,transform 0.15s;box-shadow:0 4px 20px rgba(240,180,41,0.3)}
 .submit-btn:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 6px 28px rgba(240,180,41,0.45)}.submit-btn:disabled{opacity:0.35;cursor:not-allowed}
+.ver-tabla-btn{width:100%;margin-top:12px;padding:12px 16px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--gold);font-family:'Oswald',sans-serif;font-size:0.85rem;letter-spacing:1.5px;cursor:pointer;transition:all 0.2s}
+.ver-tabla-btn:hover{border-color:var(--gold);background:rgba(240,180,41,0.1);color:var(--gold)}
+.ver-tabla-back-btn{margin-bottom:20px;padding:10px 16px;background:rgba(255,255,255,0.06);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:'Oswald',sans-serif;font-size:0.85rem;letter-spacing:1px;cursor:pointer;transition:all 0.2s}
+.ver-tabla-back-btn:hover{border-color:var(--gold);color:var(--gold)}
 .rules-box{background:var(--card2);border-radius:var(--radius-sm);padding:14px;margin-top:14px}
 .rules-title{font-size:0.7rem;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
 .rule-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:0.78rem;color:var(--muted)}
