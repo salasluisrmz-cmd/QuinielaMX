@@ -30,12 +30,16 @@ function normalize(s: string): string {
 const ALIASES: Record<string, string> = {
   "santos": "santos laguna",
   "atletico de san luis": "atletico san luis",
-  "fc juarez": "fc juárez",
+  "fc juarez": "fc juarez",
+  "juarez": "fc juarez",
   "club america": "america",
   "mazatlan fc": "mazatlan",
   "mazatlan": "mazatlan",
   "pumas": "pumas unam",
   "tigres": "tigres uanl",
+  "club tijuana": "tijuana",
+  "xolos": "tijuana",
+  "gallos blancos": "queretaro",
 };
 
 function toOurName(espnName: string): string {
@@ -44,8 +48,8 @@ function toOurName(espnName: string): string {
 }
 
 function findPartidoId(homeName: string, awayName: string): number | null {
-  const h = toOurName(homeName);
-  const a = toOurName(awayName);
+  const h = normalize(toOurName(homeName));
+  const a = normalize(toOurName(awayName));
   for (const p of PARTIDOS_J11) {
     if (normalize(p.local) === h && normalize(p.visitante) === a) return p.id;
   }
@@ -81,7 +85,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const dates = ["20260313", "20260314", "20260315"];
+    // Rango ampliado por si ESPN agrupa partidos en días adyacentes (UTC / zona)
+    const dates = ["20260312", "20260313", "20260314", "20260315", "20260316"];
+    const seen = new Set<string>();
     const allEvents: { home: string; away: string; homeScore: number; awayScore: number }[] = [];
 
     for (const date of dates) {
@@ -97,6 +103,9 @@ Deno.serve(async (req) => {
         const home = comp.competitors?.find((c: { homeAway: string }) => c.homeAway === "home");
         const away = comp.competitors?.find((c: { homeAway: string }) => c.homeAway === "away");
         if (!home?.team?.displayName || !away?.team?.displayName) continue;
+        const key = `${home.team.displayName}|${away.team.displayName}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         const homeScore = parseInt(home.score ?? "0", 10);
         const awayScore = parseInt(away.score ?? "0", 10);
         allEvents.push({
